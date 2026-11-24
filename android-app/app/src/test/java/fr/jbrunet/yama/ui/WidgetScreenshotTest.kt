@@ -15,6 +15,7 @@ import androidx.glance.appwidget.GlanceRemoteViews
 import androidx.test.core.app.ApplicationProvider
 import fr.jbrunet.yama.Fixtures
 import fr.jbrunet.yama.R
+import fr.jbrunet.yama.data.repository.RainMapRepository
 import fr.jbrunet.yama.domain.MapFrame
 import fr.jbrunet.yama.ui.theme.DarkSlate
 import fr.jbrunet.yama.ui.theme.LightSlate
@@ -102,11 +103,19 @@ open class WidgetScreenshotTest {
         val dark40 = style(WidgetBgColor.DARK, WidgetOpacity.LOW, WidgetTextColor.LIGHT)
         capture("widget_12h_dark_40", 360, 170) { WidgetFrame(dark40, open) { TwelveHoursContent(data, dark40) } }
         capture("widget_week", 360, 250) { WidgetFrame(light, open) { WeekContent(data, light) } }
-        val map = Fixtures.rainMap()
+    }
+
+    @Test
+    fun rainMapWidget() {
+        val width = 720
+        val height = 442
+        val place = Fixtures.paris
+        val z = WidgetMapRenderer.zoomFor(place.latitude, height)
+        val bounds = WidgetMapRenderer.bounds(place.latitude, place.longitude, width, height, z)
+        val map = Fixtures.rainMap(RainMapRepository.gridFor(bounds))
         val frame = map.frames.filterIsInstance<MapFrame.Forecast>()[3]
-        val z = WidgetMapRenderer.zoomFor(Fixtures.paris.latitude, 720)
-        val image = WidgetMapRenderer.render(500, 720, Fixtures.paris.latitude, Fixtures.paris.longitude, z, frame, true, 0xFF2F333D.toInt()) { _, _, _ -> null }
-        capture("widget_map", 300, 460) {
+        val image = WidgetMapRenderer.render(width, height, place.latitude, place.longitude, z, frame, true, 0xFF2F333D.toInt()) { _, _, _ -> null }
+        capture("widget_map", 300, 240) {
             WidgetFrame(dark, open, padding = 10.dp) { MapContent(image, context.getString(R.string.widget_map_caption, "Paris", "20:45", "AROME-PI", "20:30"), dark) }
         }
     }

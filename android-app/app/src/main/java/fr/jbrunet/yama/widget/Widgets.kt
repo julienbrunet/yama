@@ -154,11 +154,11 @@ object Widgets {
             AppWidgetManager.getInstance(context).getAppWidgetOptions(manager.getAppWidgetId(it))
         }
         val portrait = context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-        // In portrait: minimum width and maximum height; widget margins and caption subtracted.
+        // In portrait: minimum width and maximum height. Subtract the padding, caption and legend.
         val wDp = (options?.getInt(if (portrait) AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH) ?: 0).takeIf { it > 0 } ?: 320
         val hDp = (options?.getInt(if (portrait) AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT) ?: 0).takeIf { it > 0 } ?: 240
         val w = (wDp - 20).coerceAtLeast(80).toDouble()
-        val h = (hDp - 44).coerceAtLeast(80).toDouble()
+        val h = (hDp - 68).coerceAtLeast(80).toDouble()
         val scale = 720.0 / maxOf(w, h)
         return (w * scale).toInt() to (h * scale).toInt()
     }

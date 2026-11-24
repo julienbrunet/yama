@@ -54,7 +54,7 @@ No free API provides ready-made rain **forecast tiles**. Implemented approach (`
 - Security: dependencies verified by checksum (`gradle/verification-metadata.xml`), Gradle wrapper verified (`distributionSha256Sum`), CI actions pinned by SHA, publishing in a separate job without secrets, update APK verified (package + signature) before installation, Météo-France key excluded from Android backups, position rounded to 0.01° for Open-Meteo
 - Offline cache: last forecast as JSON (`ForecastCache`); preferences and saved places: **DataStore**
 - Background: **WorkManager** (`RefreshWorker`, 15 min): cache, widgets, “rain within the hour” alert, update check
-- Widgets: **Jetpack Glance** (`widget/`) — 6 variants with per-widget settings (`WidgetConfigActivity`, `WidgetConfigStore`); the map widget is an image (cached OSM background + clouds + rain, `WidgetMapRenderer`) recomputed by the worker
+- Widgets: **Jetpack Glance** (`widget/`) provides six variants with per-widget settings (`WidgetConfigActivity`, `WidgetConfigStore`). The worker renders the map widget with the interactive map's rain gradient, cloud opacity and map labels. Glance draws the same localized intensity legend below the image.
 - Location: native `LocationManager` (fused / GPS / network), no Google Play Services → F-Droid compatible
 - Map: **osmdroid**
 - Updates: `UpdateManager` (GitHub Releases → DownloadManager → Android installer through FileProvider)

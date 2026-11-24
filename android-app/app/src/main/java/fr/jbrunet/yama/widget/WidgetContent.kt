@@ -2,6 +2,10 @@ package fr.jbrunet.yama.widget
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -28,12 +32,15 @@ import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import fr.jbrunet.yama.R
 import fr.jbrunet.yama.data.repository.LocalForecast
 import fr.jbrunet.yama.domain.WeatherCondition
 import fr.jbrunet.yama.domain.minutesUntilRain
+import fr.jbrunet.yama.ui.labelRes
+import fr.jbrunet.yama.ui.map.RainLevel
 import fr.jbrunet.yama.ui.theme.SlatePalette
 import fr.jbrunet.yama.ui.theme.DarkSlate
 import fr.jbrunet.yama.ui.theme.LightSlate
@@ -299,7 +306,7 @@ fun WeekContent(data: LocalForecast, c: WidgetColors) {
     }
 }
 
-/** Rain map: pre-computed image (OSM background + rain) and caption. */
+/** Rain map: pre-computed image, intensity scale and caption. */
 @Composable
 fun MapContent(image: Bitmap?, label: String?, c: WidgetColors) {
     val context = LocalContext.current
@@ -315,11 +322,50 @@ fun MapContent(image: Bitmap?, label: String?, c: WidgetColors) {
                 )
             }
         }
+        if (image != null) {
+            Spacer(GlanceModifier.height(6.dp))
+            WidgetRainLegend(c)
+        }
         Spacer(GlanceModifier.height(6.dp))
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Icon(R.drawable.ic_w_drop, c.rain, 14.dp)
             Spacer(GlanceModifier.width(4.dp))
             Text(label ?: context.getString(R.string.widget_map_rain), style = TextStyle(color = c.secondary, fontSize = 12.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+        }
+    }
+}
+
+private val widgetRainLegendBitmap by lazy {
+    val bitmap = Bitmap.createBitmap(256, 6, Bitmap.Config.ARGB_8888)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = LinearGradient(0f, 0f, 256f, 0f, RainLevel.entries.map { it.color }.toIntArray(), null, Shader.TileMode.CLAMP)
+    }
+    Canvas(bitmap).drawRoundRect(0f, 0f, 256f, 6f, 3f, 3f, paint)
+    bitmap
+}
+
+@Composable
+private fun WidgetRainLegend(c: WidgetColors) {
+    Image(
+        ImageProvider(widgetRainLegendBitmap),
+        contentDescription = null,
+        modifier = GlanceModifier.fillMaxWidth().height(6.dp),
+        contentScale = ContentScale.FillBounds,
+    )
+    Row(GlanceModifier.fillMaxWidth()) {
+        val labels = RainLevel.entries.mapNotNull { it.labelRes }
+        labels.forEachIndexed { index, label ->
+            val alignment = when (index) {
+                0 -> TextAlign.Start
+                labels.lastIndex -> TextAlign.End
+                else -> TextAlign.Center
+            }
+            Text(
+                LocalContext.current.getString(label),
+                modifier = GlanceModifier.defaultWeight(),
+                style = TextStyle(color = c.secondary, fontSize = 10.sp, textAlign = alignment),
+                maxLines = 1,
+            )
         }
     }
 }

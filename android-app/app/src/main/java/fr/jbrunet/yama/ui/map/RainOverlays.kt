@@ -90,19 +90,21 @@ internal class MapLabelsOverlay(map: MapView) : TilesOverlay(map.tileProvider, m
         setOptionsMenuEnabled(false)
     }
 
-    fun setTheme(dark: Boolean) {
-        val ink = if (dark) 245f else 35f
-        // City names are commonly grey (#7C7C7C). Weight red a little more to keep coloured roads subdued.
-        setColorFilter(ColorMatrixColorFilter(floatArrayOf(
-            0f, 0f, 0f, 0f, ink,
-            0f, 0f, 0f, 0f, ink,
-            0f, 0f, 0f, 0f, ink,
-            -5.5f * 0.42f, -5.5f * 0.48f, -5.5f * 0.10f, 0f, 5.5f * 172f,
-        )))
-    }
+    fun setTheme(dark: Boolean) = setColorFilter(mapLabelsFilter(dark))
 
     // The base overlay owns and detaches the shared tile provider.
     override fun onDetach(mapView: MapView) = Unit
+}
+
+internal fun mapLabelsFilter(dark: Boolean): ColorMatrixColorFilter {
+    val ink = if (dark) 245f else 35f
+    // Give red more weight so coloured roads stay subdued under the grey city labels.
+    return ColorMatrixColorFilter(floatArrayOf(
+        0f, 0f, 0f, 0f, ink,
+        0f, 0f, 0f, 0f, ink,
+        0f, 0f, 0f, 0f, ink,
+        -5.5f * 0.42f, -5.5f * 0.48f, -5.5f * 0.10f, 0f, 5.5f * 172f,
+    ))
 }
 
 /** RainViewer no longer serves tiles beyond zoom 7 (“zoom not supported” image). */
