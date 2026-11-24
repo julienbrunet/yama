@@ -1,5 +1,6 @@
 package fr.jbrunet.yama.ui.map
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
@@ -7,24 +8,26 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import fr.jbrunet.yama.MeteoApp
 import fr.jbrunet.yama.data.repository.Bounds
+import fr.jbrunet.yama.data.repository.ForecastFrames
 import fr.jbrunet.yama.data.repository.ForecastRepository
 import fr.jbrunet.yama.data.repository.LoadProgress
 import fr.jbrunet.yama.data.repository.RainMapRepository
 import fr.jbrunet.yama.data.repository.staleReason
+import fr.jbrunet.yama.domain.MapFrame
 import fr.jbrunet.yama.domain.Place
 import fr.jbrunet.yama.domain.RainMap
 import fr.jbrunet.yama.widget.WidgetMapRenderer
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import fr.jbrunet.yama.domain.MapFrame
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface MapUiState {
     data object Loading : MapUiState
@@ -40,8 +43,52 @@ sealed interface MapUiState {
         val partial: Boolean = false,
         /** While playing: transition in progress towards the next frame (null when stopped). */
         val blend: Blend? = null,
-    ) : MapUiState
+        val horizon: ForecastHorizon = ForecastHorizon.AVAILABLE,
+    ) : MapUiState {
+        val forecastStart = map.nowIndex.takeIf { map.frames.getOrNull(it) is MapFrame.Forecast }
+        // Each forecast frame covers a 15-minute step, including the last one.
+        val forecastMinutes = forecastStart?.let { first ->
+            ((map.frames.last().time - map.frames[first].time) / 60).toInt() + 15
+        } ?: 0
+        val lastIndex = horizon.minutes?.let { minutes ->
+            forecastStart?.let { first ->
+                val end = map.frames[first].time + minutes * 60L
+                map.frames.indexOfLast { it.time <= end }.coerceAtLeast(first)
+            }
+        } ?: map.frames.lastIndex
+
+        fun supports(horizon: ForecastHorizon): Boolean =
+            forecastStart != null && forecastMinutes >= (horizon.minutes ?: 0)
+
+        val playbackRange: IntRange
+            get() {
+                val first = forecastStart ?: return 0..lastIndex
+                return if (index < first) 0 until first else first..lastIndex
+            }
+
+        fun withMap(updated: RainMap): Ready {
+            val replacement = copy(map = updated, blend = null)
+            val next = if (replacement.supports(horizon)) replacement else replacement.copy(horizon = ForecastHorizon.AVAILABLE)
+            if (index == forecastStart || (forecastStart == null && index == map.frames.lastIndex)) {
+                return next.copy(index = next.forecastStart ?: next.lastIndex)
+            }
+            val wasForecast = map.frames[index] is MapFrame.Forecast
+            val newForecastStart = next.forecastStart
+            val range = when {
+                newForecastStart == null -> 0..next.lastIndex
+                wasForecast -> newForecastStart..next.lastIndex
+                newForecastStart > 0 -> 0 until newForecastStart
+                else -> 0..next.lastIndex
+            }
+            val newIndex = range.firstOrNull { updated.frames[it].time >= map.frames[index].time } ?: range.last
+            return next.copy(index = newIndex)
+        }
+    }
     data class Error(val reason: fr.jbrunet.yama.data.repository.StaleReason) : MapUiState
+}
+
+enum class ForecastHorizon(val minutes: Int?) {
+    ONE_HOUR(60), TWELVE_HOURS(12 * 60), AVAILABLE(null),
 }
 
 /**
@@ -110,23 +157,23 @@ class MapViewModel(
             delay(400)
             val s = _state.value as? MapUiState.Ready ?: return@launch
             if (!RainMapRepository.needsNewGrid(s.map.grid, bounds)) return@launch
-            // Area seen recently: reused without a network call.
-            rainMaps.cachedFor(bounds)?.let { (grid, forecast) ->
-                val map = s.map.withForecast(grid, forecast)
-                ForecastBitmaps.prepare(map.frames)
-                _state.value = s.copy(map = map, index = s.index.coerceIn(0, map.frames.lastIndex))
-                return@launch
+            val now = clock() / 1000
+            val cached = rainMaps.cachedFor(bounds, now)
+            val grid = cached?.first ?: RainMapRepository.gridFor(bounds)
+            val forecast = if (cached != null) {
+                ForecastFrames(cached.second)
+            } else {
+                _state.value = s.copy(refreshing = true)
+                runCatching { rainMaps.forecastFor(grid, now) }.getOrNull()
             }
-            val grid = RainMapRepository.gridFor(bounds)
-            _state.value = s.copy(refreshing = true)
-            val forecast = runCatching { rainMaps.forecastFor(grid) }.getOrNull()
+            if (forecast != null) ForecastBitmaps.prepare(forecast.frames)
+            ensureActive()
             val cur = _state.value as? MapUiState.Ready ?: return@launch
             _state.value = if (forecast == null || forecast.frames.isEmpty()) {
                 cur.copy(refreshing = false)
             } else {
                 val map = cur.map.withForecast(grid, forecast.frames)
-                ForecastBitmaps.prepare(map.frames)
-                cur.copy(map = map, index = cur.index.coerceIn(0, map.frames.lastIndex), refreshing = false, partial = forecast.partial)
+                cur.withMap(map).copy(refreshing = false, partial = forecast.partial)
             }
         }
     }
@@ -142,7 +189,7 @@ class MapViewModel(
                 val place = place ?: forecasts.resolvePlace()
                 val grid = (viewport ?: initialViewport(place))?.let(RainMapRepository::gridFor)
                     ?: RainMapRepository.gridAround(place)
-                val forecast = async { runCatching { rainMaps.forecastFor(grid) } }
+                val forecast = async { runCatching { rainMaps.forecastFor(grid, clock() / 1000) } }
                 val radar = rainMaps.radar()
                 // First display: the map and the radar appear without waiting for the forecast.
                 if (previous == null && radar.isNotEmpty() && !forecast.isCompleted) {
@@ -156,13 +203,11 @@ class MapViewModel(
                 ForecastBitmaps.prepare(map.frames) // images computed off the main thread
                 // Stay on “now” if the user was there, otherwise on the same time.
                 val shown = _state.value as? MapUiState.Ready ?: previous
-                val index = when {
-                    shown == null || shown.index == shown.map.nowIndex || shown === _state.value && shown.index == shown.map.frames.lastIndex -> map.nowIndex
-                    else -> map.frames.indexOfFirst { it.time >= shown.map.frames[shown.index].time }
-                        .takeIf { it >= 0 } ?: map.nowIndex
-                }
-                MapUiState.Ready(
-                    place, map, index, playing = shown?.playing ?: false, loadedAt = clock(),
+                val ready = shown?.withMap(map) ?: MapUiState.Ready(
+                    place, map, if (frames[map.nowIndex] is MapFrame.Forecast) map.nowIndex else map.frames.lastIndex,
+                )
+                ready.copy(
+                    place = place, loadedAt = clock(), refreshing = false,
                     partial = predicted.getOrNull()?.partial ?: true,
                 )
             }
@@ -213,7 +258,15 @@ class MapViewModel(
 
     fun select(index: Int) {
         val s = _state.value as? MapUiState.Ready ?: return
-        _state.value = s.copy(index = index.coerceIn(0, s.map.frames.lastIndex), blend = null)
+        player?.cancel()
+        _state.value = s.copy(index = index.coerceIn(0, s.lastIndex), blend = null, playing = false)
+    }
+
+    fun selectHorizon(horizon: ForecastHorizon) {
+        val s = _state.value as? MapUiState.Ready ?: return
+        val first = s.forecastStart ?: return
+        if (!s.supports(horizon)) return
+        startPlayback(s.copy(horizon = horizon, index = first, blend = null))
     }
 
     fun togglePlay() {
@@ -223,51 +276,88 @@ class MapViewModel(
             _state.value = s.copy(playing = false, blend = null)
             return
         }
-        _state.value = s.copy(playing = true)
+        val range = s.playbackRange
+        val index = if (s.index == range.last) range.first else s.index
+        startPlayback(s.copy(index = index))
+    }
+
+    private fun startPlayback(state: MapUiState.Ready) {
+        player?.cancel()
+        val playing = state.playbackRange.count() > 1
+        _state.value = state.copy(playing = playing)
+        if (!playing) return
         player = viewModelScope.launch {
             while (isActive) {
                 val start = _state.value as? MapUiState.Ready ?: break
-                val from = start.map.frames.getOrNull(start.index) ?: break
-                val nextIndex = (start.index + 1) % start.map.frames.size
-                val to = start.map.frames[nextIndex]
-                // Between two forecasts on the same grid: intermediate frames (rain moved).
-                val tweenable = from is MapFrame.Forecast && to is MapFrame.Forecast && from.grid == to.grid && nextIndex != 0
-                // Between two radar frames: cross-fade, drawn directly by the map.
-                val fade = from is MapFrame.Radar && to is MapFrame.Radar
-                if (tweenable || fade) {
-                    val motion = if (tweenable) {
-                        withContext(Dispatchers.Default) { FrameInterpolation.motion(from as MapFrame.Forecast, to as MapFrame.Forecast) }
-                    } else null
-                    for (step in 1 until STEPS) {
-                        delay(FRAME_MS / STEPS)
-                        val t = step.toFloat() / STEPS
-                        val tween = motion?.let { m ->
-                            withContext(Dispatchers.Default) {
-                                FrameInterpolation.between(from as MapFrame.Forecast, to as MapFrame.Forecast, t, m)
-                                    .also { ForecastBitmaps.get(it) } // image ready before display
-                            }
-                        }
-                        val cur = _state.value as? MapUiState.Ready ?: return@launch
-                        if (!cur.playing || cur.index != start.index || cur.map !== start.map) break
-                        _state.value = cur.copy(blend = Blend(to, t, tween))
-                    }
-                    delay(FRAME_MS / STEPS)
-                } else {
-                    delay(FRAME_MS)
+                val range = start.playbackRange
+                val count = range.count()
+                if (!start.playing || count <= 1) {
+                    _state.value = start.copy(playing = false, blend = null)
+                    break
                 }
-                val cur = _state.value as? MapUiState.Ready ?: break
-                if (!cur.playing) break
-                _state.value = cur.copy(index = (cur.index + 1) % cur.map.frames.size, blend = null)
+                var deadline = SystemClock.uptimeMillis()
+                repeat(count) {
+                    val cur = _state.value as? MapUiState.Ready ?: return@launch
+                    if (cur.map !== start.map || !cur.playing) break
+                    val nextIndex = if (cur.index == range.last) range.first else cur.index + 1
+                    val begin = deadline
+                    if (cur.index == range.last) {
+                        deadline += LAST_FRAME_MS
+                    } else {
+                        val position = cur.index - range.first
+                        val duration = PLAYBACK_MS - LAST_FRAME_MS
+                        deadline += duration * (position + 1) / (count - 1) - duration * position / (count - 1)
+                    }
+                    if (!playFrame(cur, nextIndex, begin, deadline)) break
+                }
             }
         }
     }
 
+    private suspend fun playFrame(start: MapUiState.Ready, nextIndex: Int, begin: Long, end: Long): Boolean {
+        val from = start.map.frames[start.index]
+        val to = start.map.frames[nextIndex]
+        val steps = ((end - begin) / TRANSITION_FRAME_MS).toInt().coerceIn(1, MAX_TRANSITION_STEPS)
+        if (nextIndex > start.index && steps > 1) {
+            val tweenable = from is MapFrame.Forecast && to is MapFrame.Forecast && from.grid == to.grid
+            val fade = from is MapFrame.Radar && to is MapFrame.Radar
+            if (tweenable || fade) {
+                val motion = if (tweenable) withContext(Dispatchers.Default) {
+                    FrameInterpolation.motion(from as MapFrame.Forecast, to as MapFrame.Forecast)
+                } else null
+                for (step in 1 until steps) {
+                    val at = begin + (end - begin) * step / steps
+                    delay((at - SystemClock.uptimeMillis()).coerceAtLeast(0))
+                    if (SystemClock.uptimeMillis() >= end) break
+                    val t = step.toFloat() / steps
+                    val tween = motion?.let {
+                        withContext(Dispatchers.Default) {
+                            FrameInterpolation.between(from as MapFrame.Forecast, to as MapFrame.Forecast, t, it)
+                                .also { ForecastBitmaps.get(it) }
+                        }
+                    }
+                    val cur = currentPlaybackFrame(start) ?: return false
+                    if (SystemClock.uptimeMillis() < end) _state.value = cur.copy(blend = Blend(to, t, tween))
+                }
+            }
+        }
+        delay((end - SystemClock.uptimeMillis()).coerceAtLeast(0))
+        val cur = currentPlaybackFrame(start) ?: return false
+        _state.value = cur.copy(index = nextIndex, blend = null)
+        return true
+    }
+
+    private fun currentPlaybackFrame(start: MapUiState.Ready): MapUiState.Ready? =
+        (_state.value as? MapUiState.Ready)?.takeIf { it.playing && it.map === start.map && it.index == start.index }
+
     companion object {
         const val REFRESH_MS = 10 * 60 * 1000L
 
-        /** How long a 15 min step is shown while playing, split into [STEPS] frames. */
-        const val FRAME_MS = 700L
-        const val STEPS = 6
+        /** Every horizon fits in one loop. Deadlines include the time spent drawing intermediate frames. */
+        private const val PLAYBACK_MS = 8_000L
+        private const val LAST_FRAME_MS = 300L
+        private const val TRANSITION_FRAME_MS = 40L
+        private const val MAX_TRANSITION_STEPS = 24
 
         /** Zoom when the map opens. */
         const val INITIAL_ZOOM = 8

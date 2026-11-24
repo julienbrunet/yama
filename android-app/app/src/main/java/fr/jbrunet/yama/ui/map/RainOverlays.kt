@@ -3,12 +3,14 @@ package fr.jbrunet.yama.ui.map
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Point
 import android.graphics.RectF
 import android.util.LruCache
+import androidx.core.graphics.ColorUtils
 import fr.jbrunet.yama.data.remote.Network
 import fr.jbrunet.yama.domain.CloudLayer
 import fr.jbrunet.yama.domain.ForecastGrid
@@ -25,6 +27,7 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
+import org.osmdroid.views.overlay.TilesOverlay
 import kotlin.math.PI
 import kotlin.math.atan
 import kotlin.math.cos
@@ -32,6 +35,7 @@ import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sinh
 import kotlin.math.tan
 
@@ -75,6 +79,32 @@ val FadedMapFilter = ColorMatrixColorFilter(
     },
 )
 
+/**
+ * Draws the dark ink of the original OSM tiles above the weather. The tiles are raster images,
+ * so the luminance mask picks out city names and other dark map details together.
+ */
+internal class MapLabelsOverlay(map: MapView) : TilesOverlay(map.tileProvider, map.context) {
+    init {
+        loadingBackgroundColor = Color.TRANSPARENT
+        loadingLineColor = Color.TRANSPARENT
+        setOptionsMenuEnabled(false)
+    }
+
+    fun setTheme(dark: Boolean) {
+        val ink = if (dark) 245f else 35f
+        // City names are commonly grey (#7C7C7C). Weight red a little more to keep coloured roads subdued.
+        setColorFilter(ColorMatrixColorFilter(floatArrayOf(
+            0f, 0f, 0f, 0f, ink,
+            0f, 0f, 0f, 0f, ink,
+            0f, 0f, 0f, 0f, ink,
+            -5.5f * 0.42f, -5.5f * 0.48f, -5.5f * 0.10f, 0f, 5.5f * 172f,
+        )))
+    }
+
+    // The base overlay owns and detaches the shared tile provider.
+    override fun onDetach(mapView: MapView) = Unit
+}
+
 /** RainViewer no longer serves tiles beyond zoom 7 (“zoom not supported” image). */
 const val RADAR_MAX_ZOOM = 7
 
@@ -90,7 +120,7 @@ class RadarOverlay(private val view: MapView) : Overlay() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val pending = mutableSetOf<String>()
-    private val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = 210 }
+    private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val a = Point()
     private val b = Point()
     // Reused on every draw (called for every animation and panning frame).
@@ -102,10 +132,10 @@ class RadarOverlay(private val view: MapView) : Overlay() {
         val f = frame ?: return
         val n2 = next
         if (n2 == null || mix <= 0f) {
-            drawFrame(canvas, mapView, f, 210)
+            drawFrame(canvas, mapView, f, 255)
         } else {
-            drawFrame(canvas, mapView, f, (210 * (1 - mix)).toInt())
-            drawFrame(canvas, mapView, n2, (210 * mix).toInt())
+            drawFrame(canvas, mapView, f, (255 * (1 - mix)).toInt())
+            drawFrame(canvas, mapView, n2, (255 * mix).toInt())
         }
     }
 
@@ -156,10 +186,12 @@ object RadarTileCache {
     fun get(url: String): Bitmap? = cache.get(url)
 
     fun fetch(url: String): Bitmap? = runCatching {
+        // Keep the original RGBA values to read RainViewer's reflectivity palette.
+        val options = BitmapFactory.Options().apply { inPremultiplied = false }
         Network.client.newCall(Request.Builder().url(url).build()).execute().use { r ->
             if (!r.isSuccessful) return null
-            BitmapFactory.decodeStream(r.body?.byteStream())
-        }
+            BitmapFactory.decodeStream(r.body.byteStream(), null, options)
+        }?.let(::renderRadarTile)
     }.getOrNull()?.also { cache.put(url, it) }
 }
 
@@ -172,34 +204,44 @@ private fun tileToLon(x: Int, z: Int) = x.toDouble() / (1 shl z) * 360 - 180
 private fun tileToLat(y: Int, z: Int) = Math.toDegrees(atan(sinh(PI * (1 - 2.0 * y / (1 shl z)))))
 
 /**
- * Intensity scale shared by the radar (RainViewer “Universal Blue” palette, no. 2)
- * and the forecast: blues for light to moderate rain, yellow → red for heavy rain.
+ * Shared radar and forecast palette, from blue through violet to warm colours.
  */
 enum class RainLevel(val minMmPerHour: Double, val color: Int) {
-    VERY_LIGHT(0.2, 0x999BC4E2.toInt()),
-    LIGHT(1.0, 0xAA4A90D9.toInt()),
-    MODERATE(2.5, 0xBB1F5FBF.toInt()),
-    HEAVY(5.0, 0xCCF2D13A.toInt()),
-    VERY_HEAVY(10.0, 0xCCF28C28.toInt()),
-    EXTREME(20.0, 0xDDE0412E.toInt()),
+    VERY_LIGHT(0.2, 0x37379AF5),
+    LIGHT(1.0, 0x9C2059EF.toInt()),
+    MODERATE(2.5, 0xB43B38DF.toInt()),
+    HEAVY(5.0, 0xB58B3FCA.toInt()),
+    VERY_HEAVY(10.0, 0xBFC96771.toInt()),
+    EXTREME(20.0, 0xD4F6DE60.toInt()),
 }
 
-/** Intensity (mm / 15 min) → ARGB colour of the level, or null below the rain threshold. */
-fun rainColor(mmPer15: Double): Int? = rainArgb(mmPer15).takeIf { it != 0 }
-
-/** Level thresholds in mm / 15 min, strongest first (avoids walking the enum for every pixel). */
-private val RainThresholds = RainLevel.entries.reversed().map { it.minMmPerHour / 4 }.toDoubleArray()
-private val RainColors = RainLevel.entries.reversed().map { it.color }.toIntArray()
-
-/** Like [rainColor], 0 (transparent) below the rain threshold. */
-private fun rainArgb(mmPer15: Double): Int {
-    for (i in RainThresholds.indices) if (mmPer15 >= RainThresholds[i]) return RainColors[i]
-    return 0
+/** Interpolate colour and opacity between the legend's intensities. The dry edge fades to zero. */
+private val RainGradient = IntArray(2_001) { sample ->
+    val rate = sample / 100.0
+    val levels = RainLevel.entries
+    val next = levels.indexOfFirst { it.minMmPerHour > rate }
+    when {
+        next == -1 -> levels.last().color
+        next == 0 -> {
+            val color = levels.first().color
+            val alpha = ((rate - 0.08).coerceAtLeast(0.0) / 0.12 * Color.alpha(color)).roundToInt()
+            ColorUtils.setAlphaComponent(color, alpha)
+        }
+        else -> {
+            val from = levels[next - 1]
+            val to = levels[next]
+            val mix = (rate - from.minMmPerHour) / (to.minMmPerHour - from.minMmPerHour)
+            ColorUtils.blendARGB(from.color, to.color, mix.toFloat())
+        }
+    }
 }
+
+internal fun smoothRainArgb(mmPer15: Double): Int =
+    RainGradient[(mmPer15 * 400).coerceIn(0.0, RainGradient.lastIndex.toDouble()).toInt()]
 
 /**
  * Forecast grid (Open-Meteo or AROME-PI): values interpolated onto a finer image,
- * then coloured by level → areas with sharp, rounded edges.
+ * then coloured with a continuous rain gradient.
  */
 class ForecastGridOverlay : Overlay() {
     var frame: MapFrame.Forecast? = null
@@ -208,11 +250,11 @@ class ForecastGridOverlay : Overlay() {
             field = value
         }
     private var bitmap: Bitmap? = null
-    private val paint = Paint().apply { isFilterBitmap = false } // sharp edges, no blur
-    /** Colour of the dotted outline of the forecast area (depends on the theme). */
+    private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
     /** Cloud tint (white on dark, slate grey on the light background). */
     var cloudPaint = cloudPaint(dark = true)
 
+    /** Colour of the dotted outline of the forecast area (depends on the theme). */
     var outlineColor: Int = 0x55F2F3F5
         set(value) {
             field = value
@@ -272,7 +314,7 @@ object ForecastBitmaps {
     }
 }
 
-/** Maximum size (px) of the forecast image: fine enough for sharp edges, without blowing up memory. */
+/** Maximum size (px) of the forecast image: detailed enough to scale up without blowing up memory. */
 private const val RENDER_MAX = 480
 
 /**
@@ -320,7 +362,7 @@ internal fun forecastPixels(frame: MapFrame.Forecast): IntArray {
                     weights += wgt
                 }
             }
-            pixels[py * w + px] = rainArgb(if (weights > 0) sum / weights else 0.0)
+            pixels[py * w + px] = smoothRainArgb(if (weights > 0) sum / weights else 0.0)
         }
     }
     return pixels
@@ -382,8 +424,11 @@ internal fun renderClouds(layer: CloudLayer): Bitmap {
     return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
 }
 
-/** Cloud paint: keeps the veil opacity, in white (dark theme) or slate grey (light theme). */
-fun cloudPaint(dark: Boolean) = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+internal const val MAP_CLOUD_OPACITY = 115
+
+/** Cloud tint in white (dark theme) or slate grey (light theme). */
+fun cloudPaint(dark: Boolean, opacity: Int = 255) = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+    alpha = opacity
     colorFilter = android.graphics.PorterDuffColorFilter(
         if (dark) 0xFFF2F3F5.toInt() else 0xFF5F6878.toInt(),
         android.graphics.PorterDuff.Mode.SRC_IN,

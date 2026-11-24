@@ -12,6 +12,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import fr.jbrunet.yama.Fixtures
 import fr.jbrunet.yama.R
 import fr.jbrunet.yama.data.local.Settings
+import fr.jbrunet.yama.data.repository.RainMapRepository
 import fr.jbrunet.yama.data.update.AvailableUpdate
 import fr.jbrunet.yama.domain.AppVersion
 import fr.jbrunet.yama.domain.Place
@@ -24,6 +25,7 @@ import fr.jbrunet.yama.ui.settings.SettingsContent
 import fr.jbrunet.yama.ui.theme.MeteoTheme
 import fr.jbrunet.yama.ui.theme.ThemeMode
 import fr.jbrunet.yama.ui.theme.ThemeStyle
+import fr.jbrunet.yama.widget.WidgetMapRenderer
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -204,9 +206,13 @@ open class ScreenshotTest {
         )
     }
 
+    private fun mapForScreenshot() = Fixtures.rainMap(
+        RainMapRepository.gridFor(WidgetMapRenderer.bounds(Fixtures.paris.latitude, Fixtures.paris.longitude, 411, 891, 8)),
+    )
+
     @Test
     fun mapLight() = capture("map_light", ThemeMode.LIGHT) {
-        val map = Fixtures.rainMap()
+        val map = mapForScreenshot()
         MapContent(MapUiState.Ready(Fixtures.paris, map, map.nowIndex + 3, loadedAt = 1_792_180_800_000L), online = false)
     }
 
@@ -222,7 +228,7 @@ open class ScreenshotTest {
 
     @Test
     fun map() = capture("map") {
-        val map = Fixtures.rainMap()
+        val map = mapForScreenshot()
         MapContent(MapUiState.Ready(Fixtures.paris, map, map.nowIndex + 3, loadedAt = 1_792_180_800_000L), online = false)
     }
 
@@ -238,7 +244,7 @@ open class ScreenshotTest {
 
     @Test
     fun mapWind() = capture("map_wind") {
-        val map = Fixtures.rainMap()
+        val map = mapForScreenshot()
         MapContent(
             MapUiState.Ready(Fixtures.paris, map, map.nowIndex + 3, loadedAt = 1_792_180_800_000L),
             online = false,

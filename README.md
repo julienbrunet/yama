@@ -15,7 +15,7 @@ A free and open-source weather app built on open weather data. Available in Engl
 <p align="center">
   <img src="site/nature_dusk.jpg" width="30%" alt="Nature theme at dusk">
   <img src="site/nature_sunny_day.jpg" width="30%" alt="Nature theme during the day">
-  <img src="site/map.jpg" width="30%" alt="Rain map">
+  <img src="site/map.jpg" width="30%" alt="YAMA rain forecast over the Rhône Valley, with city names visible above the rain">
 </p>
 
 ## Features
@@ -23,8 +23,10 @@ A free and open-source weather app built on open weather data. Available in Engl
 - **Your location** by default (GPS, never shared) and saved places.
 - **Rain over the next 2 hours, every 15 minutes** (high-resolution AROME / ICON models),
   24 hours hour by hour, 7 days, sunrise and sunset, an alert when rain is due within the hour.
-- **Rain map**: observed radar then a smooth animated forecast, Meteosat satellite and forecast clouds,
-  wind map on demand; Météo-France AROME-PI nowcast with your own free key (optional).
+- **Rain map** with observed radar and animated forecasts for 1 h, 12 h or the full available forecast
+  (typically 24 h). Each forecast loop takes 8 seconds. Radar and forecasts share a soft, translucent
+  rain gradient, with city names drawn above the weather. The map includes satellite and forecast
+  clouds, wind on demand, and optional Météo-France AROME-PI with a free API key.
 - **Six widgets** (Mini, Rain, Day, 12 h, Week, Rain map), each with its own background, transparency and text colour.
 - **Five themes**: Slate (light / dark), Sky, Pastel, Aurora and **Nature**, whose mountain and lake landscape
   follows the time of day and the weather.

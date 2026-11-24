@@ -23,6 +23,9 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -41,10 +44,12 @@ import org.osmdroid.events.ZoomEvent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,6 +74,7 @@ import org.osmdroid.views.overlay.Marker
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 
 private val HourFormat = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -107,6 +113,7 @@ fun MapScreen(viewModel: MapViewModel, place: Place?, onBack: () -> Unit) {
             progress = progress,
             wind = wind,
             onToggleWind = viewModel::toggleWind,
+            onSelectHorizon = viewModel::selectHorizon,
         )
     }
 }
@@ -123,9 +130,11 @@ fun MapContent(
     progress: LoadProgress? = null,
     wind: WindUiState = WindUiState(),
     onToggleWind: () -> Unit = {},
+    onSelectHorizon: (ForecastHorizon) -> Unit = {},
 ) {
     val frame = state.map.frames.getOrNull(state.index)
     val windFrame = if (wind.visible && frame != null) wind.frames.at(frame.time) else null
+    val uriHandler = LocalUriHandler.current
     Box(Modifier.fillMaxSize().screenBackground()) {
         RainMapView(state.place, state.map, frame, online, onViewportChanged, windFrame, state.blend)
         Column(Modifier.fillMaxWidth().padding(20.dp)) {
@@ -141,7 +150,18 @@ fun MapContent(
                 WindButton(wind.visible, onToggleWind)
             }
         }
-        Timeline(state, onSelect, onTogglePlay, Modifier.align(Alignment.BottomCenter), windShown = windFrame != null)
+        Column(Modifier.align(Alignment.BottomCenter), horizontalAlignment = Alignment.End) {
+            Text(
+                stringResource(R.string.map_attribution),
+                Modifier.padding(end = 16.dp).clip(RoundedCornerShape(4.dp))
+                    .background(Slate.Background.copy(alpha = 0.9f))
+                    .clickable { uriHandler.openUri("https://www.openstreetmap.org/copyright") }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                color = Slate.Secondary,
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Timeline(state, onSelect, onTogglePlay, onSelectHorizon, Modifier, windShown = windFrame != null)
+        }
     }
 }
 
@@ -177,6 +197,7 @@ private fun RainMapView(
         }
     }
     val radarOverlay = remember { RadarOverlay(mapView) }
+    val labelsOverlay = remember { MapLabelsOverlay(mapView) }
     val windOverlay = remember { WindOverlay(context.resources.displayMetrics.density) }
     // Observed clouds: satellite shared by the app (common cache); absent in previews / tests.
     val satelliteOverlay = remember {
@@ -198,8 +219,9 @@ private fun RainMapView(
             loadingLineColor = loadingBackgroundColor
         }
         gridOverlay.outlineColor = if (dark) 0x55F2F3F5 else 0x662B2F38
-        gridOverlay.cloudPaint = cloudPaint(dark)
-        satelliteOverlay?.paint = cloudPaint(dark)
+        gridOverlay.cloudPaint = cloudPaint(dark, opacity = MAP_CLOUD_OPACITY)
+        satelliteOverlay?.paint = cloudPaint(dark, opacity = MAP_CLOUD_OPACITY)
+        labelsOverlay.setTheme(dark)
         windOverlay.haloColor = if (dark) 0x99353A45.toInt() else 0xCCF8F9FA.toInt()
         mapView.invalidate()
     }
@@ -225,32 +247,44 @@ private fun RainMapView(
         onDispose { mapView.onDetach() }
     }
     AndroidView({ mapView }, Modifier.fillMaxSize()) { view ->
-        // A single rain layer visible: radar (past) or forecast grid (future).
-        view.overlays.removeAll { it is RadarOverlay || it is ForecastGridOverlay || it is SatelliteOverlay || it is WindOverlay }
+        view.overlays.removeAll {
+            it is RadarOverlay || it is ForecastGridOverlay || it is SatelliteOverlay || it is WindOverlay || it is MapLabelsOverlay
+        }
         // Wind map: shown alone (no rain or clouds) to stay readable.
         if (windFrame != null) {
             windOverlay.frame = windFrame
             view.overlays.add(0, windOverlay)
-        } else when (frame) {
-            is MapFrame.Radar -> {
-                radarOverlay.frame = frame
-                radarOverlay.next = blend?.next as? MapFrame.Radar
-                radarOverlay.mix = blend?.t ?: 0f
-                view.overlays.add(0, radarOverlay)
-                satelliteOverlay?.let { it.time = frame.time; view.overlays.add(0, it) } // clouds under the rain
+        } else {
+            // Labels above precipitation, with the location marker drawn last.
+            view.overlays.add(0, labelsOverlay)
+            when (frame) {
+                is MapFrame.Radar -> {
+                    radarOverlay.frame = frame
+                    radarOverlay.next = blend?.next as? MapFrame.Radar
+                    radarOverlay.mix = blend?.t ?: 0f
+                    view.overlays.add(0, radarOverlay)
+                    satelliteOverlay?.let { it.time = frame.time; view.overlays.add(0, it) } // clouds under the rain
+                }
+                is MapFrame.Forecast -> {
+                    gridOverlay.frame = blend?.tween ?: frame
+                    view.overlays.add(0, gridOverlay)
+                }
+                null -> Unit
             }
-            is MapFrame.Forecast -> {
-                gridOverlay.frame = blend?.tween ?: frame
-                view.overlays.add(0, gridOverlay)
-            }
-            null -> Unit
         }
         view.invalidate()
     }
 }
 
 @Composable
-private fun Timeline(state: MapUiState.Ready, onSelect: (Int) -> Unit, onTogglePlay: () -> Unit, modifier: Modifier, windShown: Boolean = false) {
+private fun Timeline(
+    state: MapUiState.Ready,
+    onSelect: (Int) -> Unit,
+    onTogglePlay: () -> Unit,
+    onSelectHorizon: (ForecastHorizon) -> Unit,
+    modifier: Modifier,
+    windShown: Boolean = false,
+) {
     val frames = state.map.frames
     val frame = frames.getOrNull(state.index)
     Column(
@@ -282,12 +316,34 @@ private fun Timeline(state: MapUiState.Ready, onSelect: (Int) -> Unit, onToggleP
                 )
             }
         }
-        if (frames.size > 1) {
+        if (state.forecastStart != null) {
+            Spacer(Modifier.height(6.dp))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                ForecastHorizon.entries.forEachIndexed { index, horizon ->
+                    SegmentedButton(
+                        selected = state.horizon == horizon,
+                        onClick = { onSelectHorizon(horizon) },
+                        enabled = state.supports(horizon),
+                        shape = SegmentedButtonDefaults.itemShape(index, ForecastHorizon.entries.size),
+                        icon = {},
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = Slate.TileHighlight,
+                            activeContentColor = Slate.Primary,
+                            inactiveContainerColor = Color.Transparent,
+                            inactiveContentColor = Slate.Secondary,
+                        ),
+                    ) {
+                        Text(horizonLabel(horizon.minutes ?: state.forecastMinutes))
+                    }
+                }
+            }
+        }
+        if (state.lastIndex > 0) {
             Slider(
-                value = state.index.toFloat(),
-                onValueChange = { onSelect(it.toInt()) },
-                valueRange = 0f..frames.lastIndex.toFloat(),
-                steps = (frames.size - 2).coerceAtLeast(0),
+                value = state.index + (state.blend?.t ?: 0f),
+                onValueChange = { onSelect(it.roundToInt()) },
+                valueRange = 0f..state.lastIndex.toFloat(),
+                steps = state.lastIndex - 1,
                 colors = SliderDefaults.colors(
                     thumbColor = Slate.Primary,
                     activeTrackColor = Slate.Rain,
@@ -297,13 +353,26 @@ private fun Timeline(state: MapUiState.Ready, onSelect: (Int) -> Unit, onToggleP
                 ),
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(stringResource(R.string.timeline_radar), color = Slate.Muted, style = MaterialTheme.typography.labelSmall)
-                Text(stringResource(R.string.timeline_forecast), color = Slate.Muted, style = MaterialTheme.typography.labelSmall)
+                if (frames.firstOrNull() is MapFrame.Radar) {
+                    Text(stringResource(R.string.timeline_radar), color = Slate.Muted, style = MaterialTheme.typography.labelSmall)
+                } else {
+                    Spacer(Modifier.width(1.dp))
+                }
+                if (state.forecastStart != null) {
+                    Text(stringResource(R.string.timeline_forecast), color = Slate.Muted, style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
         if (windShown) WindScale() else Legend()
     }
+}
+
+@Composable
+private fun horizonLabel(minutes: Int): String = when {
+    minutes < 60 -> stringResource(R.string.timeline_minutes, minutes)
+    minutes % 60 == 0 -> stringResource(R.string.timeline_hours, minutes / 60)
+    else -> stringResource(R.string.timeline_hours_minutes, minutes / 60, minutes % 60)
 }
 
 /** Wind legend: speed levels (km/h) of the arrows. */
@@ -322,13 +391,16 @@ private fun WindScale() {
     }
 }
 
-/** Legend shared by radar / forecast: one box per level, labels under the key levels. */
+/** Intensity gradient shared by radar and forecast. */
 @Composable
 private fun Legend() {
+    Box(
+        Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+            .background(Brush.horizontalGradient(RainLevel.entries.map { Color(it.color) })),
+    )
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         RainLevel.entries.forEach { level ->
             Column(Modifier.weight(1f)) {
-                Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color(level.color)))
                 Text(
                     level.labelRes?.let { stringResource(it) }.orEmpty(),
                     color = Slate.Muted,
