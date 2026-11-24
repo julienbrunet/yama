@@ -1,7 +1,5 @@
 package fr.jbrunet.yama.ui.settings
 
-import android.Manifest
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -24,6 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.LightMode
@@ -78,7 +77,7 @@ import fr.jbrunet.yama.ui.theme.Slate
 import fr.jbrunet.yama.ui.theme.screenBackground
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
+fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit, onOpenWeatherAlerts: () -> Unit) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val search by viewModel.search.collectAsStateWithLifecycle()
     val updateStatus by viewModel.updateStatus.collectAsStateWithLifecycle()
@@ -87,9 +86,6 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
     val locationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result -> if (result.values.any { it }) viewModel.chooseCurrentLocation() }
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        viewModel.setRainAlerts(granted)
-    }
 
     val hasLocationPermission = viewModel.hasLocationPermission()
     SettingsContent(
@@ -106,13 +102,7 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
             onBack()
         },
         onRemove = viewModel::remove,
-        onRainAlerts = { enabled ->
-            if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                viewModel.setRainAlerts(enabled)
-            }
-        },
+        onOpenWeatherAlerts = onOpenWeatherAlerts,
         onAutoUpdate = viewModel::setAutoUpdate,
         onCheckUpdate = { viewModel.checkUpdate() },
         aromeStatus = aromeStatus,
@@ -134,7 +124,7 @@ fun SettingsContent(
     onChoose: (Place) -> Unit = {},
     onChooseCurrentLocation: () -> Unit = {},
     onRemove: (Place) -> Unit = {},
-    onRainAlerts: (Boolean) -> Unit = {},
+    onOpenWeatherAlerts: () -> Unit = {},
     onAutoUpdate: (Boolean) -> Unit = {},
     onCheckUpdate: () -> Unit = {},
     aromeStatus: UiText? = null,
@@ -221,13 +211,16 @@ fun SettingsContent(
         Spacer(Modifier.height(24.dp))
         SectionLabel(stringResource(R.string.section_notifications))
         Card {
-            SwitchRow(
-                null,
-                stringResource(R.string.rain_alert_title),
-                stringResource(R.string.rain_alert_subtitle),
-                settings.rainAlerts,
-                onRainAlerts,
-            )
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onOpenWeatherAlerts).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.weather_alerts), color = Slate.Primary, style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.weather_alerts_settings), color = Slate.Secondary, style = MaterialTheme.typography.bodyMedium)
+                }
+                Icon(Icons.Outlined.ChevronRight, null, tint = Slate.Secondary)
+            }
         }
 
         Spacer(Modifier.height(24.dp))

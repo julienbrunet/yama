@@ -191,10 +191,46 @@
     <string name="option_transparent">Transparent</string>
 
     <!-- Notifications -->
-    <string name="channel_rain">Imminent rain</string>
+    <string name="channel_rain">Weather alerts</string>
     <string name="channel_updates">Updates</string>
     <string name="notification_rain_title">Rain in %1$d min</string>
     <string name="notification_rain_text">Rain expected in %1$s within %2$d minutes.</string>
     <string name="notification_update_title">Update available</string>
     <string name="notification_update_text">YAMA %1$s is ready to install.</string>
+
+    <string name="weather_alerts">Weather alerts</string>
+    <string name="weather_alerts_settings">Set thresholds for rain, gusts, cold and heat</string>
+    <string name="alert_add">Add alert</string>
+    <string name="alert_edit">Edit alert</string>
+    <string name="alert_delete">Delete alert</string>
+    <string name="alert_delete_prompt">Remove this weather alert?</string>
+    <string name="alert_empty">Add an alert to choose when YAMA should notify you.</string>
+    <string name="alert_type">Weather event</string>
+    <string name="alert_place">Location</string>
+    <string name="alert_horizon">Forecast period</string>
+    <string name="alert_current_place">Current location</string>
+    <string name="alert_rain">Rain accumulation</string>
+    <string name="alert_gusts">Wind gusts</string>
+    <string name="alert_cold">Cold</string>
+    <string name="alert_heat">Heat</string>
+    <string name="alert_threshold_above">Above (%1$s)</string>
+    <string name="alert_threshold_below">Below (%1$s)</string>
+    <string name="alert_next_hour">Next hour</string>
+    <string name="alert_tonight">Tonight (10 pm to 8 am)</string>
+    <string name="alert_tomorrow">Tomorrow</string>
+    <string name="alert_next_week">Next week (Monday to Sunday)</string>
+    <string name="alert_mm">%1$s mm</string>
+    <string name="alert_kmh">%1$s km/h</string>
+    <string name="alert_celsius">%1$s °C</string>
+    <string name="alert_condition_above">Above %1$s</string>
+    <string name="alert_condition_below">Below %1$s</string>
+    <string name="alert_notification_title">%1$s · %2$s</string>
+    <string name="alert_notification_text">%1$s forecast · from %2$s</string>
+    <string name="alert_allow_notifications">Allow notifications</string>
+    <string name="alert_permissions">Allow notifications to receive your weather alerts.</string>
+    <string name="alert_allow_location">Allow location</string>
+    <string name="alert_location_permission">Allow location to receive alerts for your current position.</string>
+    <string name="alert_toggle">Enable %1$s alert</string>
+    <string name="alert_save">Save</string>
+    <string name="alert_cancel">Cancel</string>
 </resources>

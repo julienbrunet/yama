@@ -16,7 +16,6 @@ import fr.jbrunet.yama.data.repository.RainMapRepository
 import fr.jbrunet.yama.data.satellite.MercatorBox
 import fr.jbrunet.yama.domain.ForecastSource
 import fr.jbrunet.yama.domain.Place
-import fr.jbrunet.yama.domain.minutesUntilRain
 import fr.jbrunet.yama.ui.theme.DarkSlate
 import fr.jbrunet.yama.ui.theme.LightSlate
 import fr.jbrunet.yama.widget.WidgetMapRenderer
@@ -40,21 +39,11 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             .putLong("last_run", System.currentTimeMillis()).apply()
         val settings = app.settings.current()
         val result = runCatching { app.forecastRepository.load(background = true) }.getOrNull()
+        app.weatherAlerts.check(settings.weatherAlerts)
         if (result != null && Widgets.hasMapWidget(applicationContext)) {
             runCatching { renderMapWidget(app, result.place) }
         }
         Widgets.updateAll(applicationContext)
-
-        if (result != null && !result.offline && settings.rainAlerts) {
-            val minutes = minutesUntilRain(result.forecast.nextPrecipitation)
-            val prefs = applicationContext.getSharedPreferences("worker", Context.MODE_PRIVATE)
-            // A single alert per rain episode: remember the announced start time.
-            val rainStart = result.forecast.nextPrecipitation.getOrNull((minutes ?: 0) / 15)?.time
-            if (minutes != null && minutes <= 60 && prefs.getString("last_rain", null) != rainStart) {
-                Notifications.rain(applicationContext, result.place.name, minutes)
-                prefs.edit().putString("last_rain", rainStart).apply()
-            }
-        }
 
         if (settings.autoUpdate) {
             val prefs = applicationContext.getSharedPreferences("worker", Context.MODE_PRIVATE)

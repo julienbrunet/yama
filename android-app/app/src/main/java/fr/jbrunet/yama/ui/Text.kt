@@ -6,6 +6,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import fr.jbrunet.yama.R
+import fr.jbrunet.yama.domain.WeatherAlertHorizon
+import fr.jbrunet.yama.domain.WeatherAlertType
 import fr.jbrunet.yama.data.repository.LoadStage
 import fr.jbrunet.yama.data.repository.StaleReason
 import fr.jbrunet.yama.domain.ForecastSource
@@ -105,4 +107,27 @@ val ThemeStyle.labelRes: Int
         ThemeStyle.PASTEL -> R.string.theme_style_pastel
         ThemeStyle.AURORA -> R.string.theme_style_aurora
         ThemeStyle.NATURE -> R.string.theme_style_nature
+    }
+
+val WeatherAlertType.labelRes: Int
+    get() = when (this) {
+        WeatherAlertType.RAIN -> R.string.alert_rain
+        WeatherAlertType.GUSTS -> R.string.alert_gusts
+        WeatherAlertType.COLD -> R.string.alert_cold
+        WeatherAlertType.HEAT -> R.string.alert_heat
+    }
+
+val WeatherAlertType.amountRes: Int
+    get() = when (this) {
+        WeatherAlertType.RAIN -> R.string.alert_mm
+        WeatherAlertType.GUSTS -> R.string.alert_kmh
+        WeatherAlertType.COLD, WeatherAlertType.HEAT -> R.string.alert_celsius
+    }
+
+val WeatherAlertHorizon.labelRes: Int
+    get() = when (this) {
+        WeatherAlertHorizon.NEXT_HOUR -> R.string.alert_next_hour
+        WeatherAlertHorizon.TONIGHT -> R.string.alert_tonight
+        WeatherAlertHorizon.TOMORROW -> R.string.alert_tomorrow
+        WeatherAlertHorizon.NEXT_WEEK -> R.string.alert_next_week
     }
