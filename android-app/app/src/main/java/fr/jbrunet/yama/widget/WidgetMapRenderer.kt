@@ -8,8 +8,10 @@ import android.graphics.RectF
 import fr.jbrunet.yama.data.remote.Network
 import fr.jbrunet.yama.domain.MapFrame
 import fr.jbrunet.yama.ui.map.FadedMapFilter
+import fr.jbrunet.yama.ui.map.MAP_CLOUD_OPACITY
 import fr.jbrunet.yama.ui.map.SlateMapFilter
 import fr.jbrunet.yama.ui.map.cloudPaint
+import fr.jbrunet.yama.ui.map.mapLabelsFilter
 import fr.jbrunet.yama.ui.map.renderClouds
 import fr.jbrunet.yama.ui.map.renderForecast
 import okhttp3.OkHttpClient
@@ -22,7 +24,7 @@ import kotlin.math.tan
 
 /**
  * Draws the map widget image: OpenStreetMap background (darkened in the dark theme),
- * rain forecast on top and position dot. Web Mercator projection.
+ * rain forecast, map labels and position dot. Web Mercator projection.
  */
 object WidgetMapRenderer {
     private const val TILE = 256
@@ -77,17 +79,21 @@ object WidgetMapRenderer {
 
         // Map background
         val tilePaint = Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = if (dark) SlateMapFilter else FadedMapFilter }
-        for (tx in floor(left / TILE).toInt()..floor((left + width) / TILE).toInt()) {
-            for (ty in floor(top / TILE).toInt()..floor((top + height) / TILE).toInt()) {
-                val t = tile(z, tx, ty) ?: continue
-                val x = (tx * TILE - left).toFloat()
-                val y = (ty * TILE - top).toFloat()
-                canvas.drawBitmap(t, null, RectF(x, y, x + TILE, y + TILE), tilePaint)
+        val mapTiles = buildList {
+            for (tx in floor(left / TILE).toInt()..floor((left + width) / TILE).toInt()) {
+                for (ty in floor(top / TILE).toInt()..floor((top + height) / TILE).toInt()) {
+                    val bitmap = tile(z, tx, ty) ?: continue
+                    val x = (tx * TILE - left).toFloat()
+                    val y = (ty * TILE - top).toFloat()
+                    val rect = RectF(x, y, x + TILE, y + TILE)
+                    canvas.drawBitmap(bitmap, null, rect, tilePaint)
+                    add(bitmap to rect)
+                }
             }
         }
 
         // Clouds: satellite (observed) preferably, otherwise the Open-Meteo forecast.
-        val clouds = cloudPaint(dark)
+        val clouds = cloudPaint(dark, opacity = MAP_CLOUD_OPACITY)
         if (satellite != null) {
             canvas.drawBitmap(satellite, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), clouds)
         } else frame?.clouds?.let { c ->
@@ -121,9 +127,12 @@ object WidgetMapRenderer {
                     (worldX(east, z) - left).toFloat(),
                     (worldY(south, z) - top).toFloat(),
                 ),
-                Paint(),
+                Paint(Paint.FILTER_BITMAP_FLAG),
             )
         }
+
+        val labelsPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = mapLabelsFilter(dark) }
+        mapTiles.forEach { (bitmap, rect) -> canvas.drawBitmap(bitmap, null, rect, labelsPaint) }
 
         // Position
         val px = width / 2f
