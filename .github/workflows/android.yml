@@ -45,7 +45,10 @@ jobs:
         run: echo "name=$(./gradlew -q printVersionName)" >> "$GITHUB_OUTPUT"
 
       - name: Unit tests + screenshots
-        run: ./gradlew testDebugUnitTest recordRoborazziDebug
+        # Robolectric downloads its Android SDK outside Gradle's dependency cache.
+        run: >-
+          ./gradlew -ProbolectricRepo=https://maven-central.storage-download.googleapis.com/maven2
+          testDebugUnitTest recordRoborazziDebug
 
       - name: Signing key (if the secrets exist)
         env:
