@@ -6,9 +6,9 @@ import fr.jbrunet.yama.data.local.ForecastCache
 import fr.jbrunet.yama.data.repository.roundCoordinate
 import fr.jbrunet.yama.domain.MapFrame
 import fr.jbrunet.yama.ui.forecast.SCENE_WIDTH
-import fr.jbrunet.yama.ui.map.RainLevel
 import fr.jbrunet.yama.ui.map.forecastImageSize
 import fr.jbrunet.yama.ui.map.forecastPixels
+import fr.jbrunet.yama.ui.map.smoothRainArgb
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -48,8 +48,7 @@ class PerformanceTest {
                     weights += wgt
                 }
             }
-            val mmPerHour = (if (weights > 0) sum / weights else 0.0) * 4
-            RainLevel.entries.lastOrNull { mmPerHour >= it.minMmPerHour }?.color ?: 0
+            smoothRainArgb(if (weights > 0) sum / weights else 0.0)
         }
     }
 

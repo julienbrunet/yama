@@ -230,7 +230,8 @@ internal fun ForecastGrid.coordinates(): List<Pair<Double, Double>> =
     (0 until rows).flatMap { r -> (0 until cols).map { c -> (south + r * latStep) to (west + c * lonStep) } }
 
 internal fun RainViewerMapsDto.toFrames(): List<MapFrame> = radar.past.map {
-    MapFrame.Radar(it.time, "$host${it.path}/256/{z}/{x}/{y}/2/1_1.png")
+    // Smoothed reflectivity in one palette for all precipitation, including snow.
+    MapFrame.Radar(it.time, "$host${it.path}/256/{z}/{x}/{y}/2/1_0.png")
 }
 
 /** One image per 15 min step, from the current quarter hour. */

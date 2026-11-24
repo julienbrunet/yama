@@ -7,11 +7,14 @@ import fr.jbrunet.yama.data.remote.Network
 import fr.jbrunet.yama.data.repository.LocalForecast
 import fr.jbrunet.yama.data.repository.RainMapRepository
 import fr.jbrunet.yama.data.repository.toDomain
+import fr.jbrunet.yama.domain.ForecastGrid
 import fr.jbrunet.yama.domain.MapFrame
 import fr.jbrunet.yama.domain.Place
 import fr.jbrunet.yama.domain.RainMap
 import kotlinx.serialization.builtins.ListSerializer
 import kotlin.math.exp
+import kotlin.math.pow
+import kotlin.math.sin
 
 /**
  * Test data: forecast.json and geocoding.json are real Open-Meteo responses
@@ -31,9 +34,8 @@ object Fixtures {
 
     fun localForecast(offline: Boolean = false) = LocalForecast(paris, forecastDto().toDomain(), 1_792_178_100_000L, if (offline) fr.jbrunet.yama.data.repository.StaleReason.RATE_LIMITED else null)
 
-    /** Synthetic rain map: a rainy cell moving across the grid. */
-    fun rainMap(): RainMap {
-        val grid = RainMapRepository.gridAround(paris)
+    /** Synthetic rain map with a moving front and scattered showers. */
+    fun rainMap(grid: ForecastGrid = RainMapRepository.gridAround(paris)): RainMap {
         val now = 1_792_180_800L
         val radar = (6 downTo 1).map { MapFrame.Radar(now - it * 600, "https://example.invalid/{z}/{x}/{y}.png") }
         val forecast = (0 until 96).map { step ->
@@ -41,12 +43,13 @@ object Fixtures {
                 grid = grid,
                 time = now + step * 900,
                 values = FloatArray(grid.rows * grid.cols) { k ->
-                    val r = k / grid.cols
-                    val c = k % grid.cols
-                    val dr = r - 9.0 - step * 0.04
-                    val dc = c - 4.0 - step * 0.08
-                    // Main shower + an isolated rainy point (must give a round blob).
-                    (4.0 * exp(-(dr * dr + 2 * dc * dc) / 10) + if (r == 3 && c == 9) 0.6 else 0.0).toFloat()
+                    val y = (k / grid.cols).toDouble() / (grid.rows - 1)
+                    val x = (k % grid.cols).toDouble() / (grid.cols - 1) - step * 0.0015
+                    val center = 0.26 + (y - 0.3) * 0.46 + 0.05 * sin(21 * y)
+                    val front = exp(-((x - center) / 0.14).pow(2) - ((y - 0.43) / 0.34).pow(4))
+                    val shower = exp(-((x - 0.76) / 0.23).pow(2) - ((y - 0.53) / 0.16).pow(2))
+                    val northern = exp(-((x - 0.67) / 0.22).pow(2) - ((y - 0.75) / 0.13).pow(2))
+                    (front * (2.2 + 1.1 * sin(23 * y)) + shower * 0.42 + northern * 0.24).toFloat()
                 },
                 // Wide cloud front around the shower, plus a clear area to the south-east.
                 clouds = fr.jbrunet.yama.domain.CloudLayer(grid, FloatArray(grid.rows * grid.cols) { k ->
