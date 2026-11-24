@@ -22,6 +22,10 @@ import fr.jbrunet.yama.ui.map.MapContent
 import fr.jbrunet.yama.ui.map.MapUiState
 import fr.jbrunet.yama.ui.settings.SearchState
 import fr.jbrunet.yama.ui.settings.SettingsContent
+import fr.jbrunet.yama.ui.settings.WeatherAlertsContent
+import fr.jbrunet.yama.domain.WeatherAlertRule
+import fr.jbrunet.yama.domain.WeatherAlertType
+import fr.jbrunet.yama.domain.WeatherAlertHorizon
 import fr.jbrunet.yama.ui.theme.MeteoTheme
 import fr.jbrunet.yama.ui.theme.ThemeMode
 import fr.jbrunet.yama.ui.theme.ThemeStyle
@@ -69,6 +73,17 @@ open class ScreenshotTest {
     fun homeUpdateOffline() = capture("home_update_offline") {
         val update = AvailableUpdate(AppVersion.parse("0.2.0")!!, "", null)
         ForecastContent(Fixtures.localForecast(offline = true), UpdateUiState.Downloading(update, 0.6f))
+    }
+
+    @Test
+    fun weatherAlerts() = capture("weather_alerts") {
+        WeatherAlertsContent(
+            listOf(
+                WeatherAlertRule("rain", WeatherAlertType.RAIN, 5.0, WeatherAlertHorizon.TOMORROW, Fixtures.paris),
+                WeatherAlertRule("wind", WeatherAlertType.GUSTS, 60.0, WeatherAlertHorizon.TONIGHT),
+            ),
+            listOf(Fixtures.paris),
+        )
     }
 
     @Test

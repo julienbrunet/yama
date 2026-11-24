@@ -33,10 +33,11 @@ import fr.jbrunet.yama.ui.map.MapScreen
 import fr.jbrunet.yama.ui.map.MapViewModel
 import fr.jbrunet.yama.ui.settings.SettingsScreen
 import fr.jbrunet.yama.ui.settings.SettingsViewModel
+import fr.jbrunet.yama.ui.settings.WeatherAlertsScreen
 import fr.jbrunet.yama.ui.theme.MeteoTheme
 import fr.jbrunet.yama.ui.theme.Slate
 
-private enum class Screen { Forecast, Map, Settings }
+private enum class Screen { Forecast, Map, Settings, WeatherAlerts }
 
 class MainActivity : ComponentActivity() {
 
@@ -101,7 +102,9 @@ class MainActivity : ComponentActivity() {
                     requestedScreen.value = null
                 }
 
-                BackHandler(enabled = screen != Screen.Forecast) { screen = Screen.Forecast }
+                BackHandler(enabled = screen != Screen.Forecast) {
+                    screen = if (screen == Screen.WeatherAlerts) Screen.Settings else Screen.Forecast
+                }
                 // Nature theme: the home landscape goes under the system bars.
                 val immersive = screen == Screen.Forecast && Slate.Scenic
                 Box(Modifier.fillMaxSize().screenBackground().then(if (immersive) Modifier else Modifier.safeDrawingPadding())) {
@@ -120,6 +123,11 @@ class MainActivity : ComponentActivity() {
                         Screen.Settings -> SettingsScreen(
                             viewModel = viewModel<SettingsViewModel>(factory = SettingsViewModel.Factory),
                             onBack = { screen = Screen.Forecast },
+                            onOpenWeatherAlerts = { screen = Screen.WeatherAlerts },
+                        )
+                        Screen.WeatherAlerts -> WeatherAlertsScreen(
+                            viewModel = viewModel<SettingsViewModel>(factory = SettingsViewModel.Factory),
+                            onBack = { screen = Screen.Settings },
                         )
                     }
                 }

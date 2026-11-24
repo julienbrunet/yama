@@ -16,6 +16,7 @@ import fr.jbrunet.yama.data.location.LocationProvider
 import fr.jbrunet.yama.data.repository.PlaceRepository
 import fr.jbrunet.yama.data.update.UpdateController
 import fr.jbrunet.yama.domain.Place
+import fr.jbrunet.yama.domain.WeatherAlertRule
 import fr.jbrunet.yama.ui.UiText
 import fr.jbrunet.yama.ui.theme.ThemeMode
 import fr.jbrunet.yama.ui.theme.ThemeStyle
@@ -41,6 +42,7 @@ class SettingsViewModel(
     private val location: LocationProvider,
     private val arome: AromePiSource,
     private val onThemeChanged: () -> Unit = {},
+    private val onAlertsChanged: () -> Unit = {},
 ) : ViewModel() {
 
     private val _aromeStatus = MutableStateFlow<UiText?>(null)
@@ -117,7 +119,12 @@ class SettingsViewModel(
 
     fun chooseCurrentLocation() = viewModelScope.launch { store.selectCurrentLocation() }
     fun remove(place: Place) = viewModelScope.launch { store.removePlace(place) }
-    fun setRainAlerts(value: Boolean) = viewModelScope.launch { store.setRainAlerts(value) }
+    fun saveAlert(rule: WeatherAlertRule) = viewModelScope.launch {
+        store.saveAlert(rule)
+        if (rule.enabled) refreshAlerts()
+    }
+    fun removeAlert(id: String) { viewModelScope.launch { store.removeAlert(id) } }
+    fun refreshAlerts() = onAlertsChanged()
     fun setTheme(value: ThemeMode) = viewModelScope.launch {
         store.setTheme(value)
         onThemeChanged()
@@ -144,7 +151,11 @@ class SettingsViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as MeteoApp
-                SettingsViewModel(app.settings, app.placeRepository, app.updates, app.location, app.aromePi) { fr.jbrunet.yama.widget.Widgets.refreshNow(app) }
+                SettingsViewModel(
+                    app.settings, app.placeRepository, app.updates, app.location, app.aromePi,
+                    onThemeChanged = { fr.jbrunet.yama.widget.Widgets.refreshNow(app) },
+                    onAlertsChanged = { fr.jbrunet.yama.widget.Widgets.refreshNow(app, replace = false) },
+                )
             }
         }
     }

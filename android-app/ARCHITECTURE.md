@@ -45,6 +45,14 @@ No free API provides ready-made rain **forecast tiles**. Implemented approach (`
 - Used only in France and when the view is ≤ 4° tall; beyond +6 h, or on failure, the Open-Meteo forecast takes over.
 - Shared forecast rendering (`renderForecast`) uses Gaussian-kernel interpolation and a continuous rain gradient.
 
+## Weather alerts
+
+Settings stores rules for a place or the current location. The refresh worker groups enabled rules
+by forecast coordinates. It uses quarter-hour samples for the next hour and hourly samples for
+the other horizons. Rain rules sum liquid precipitation over the window. Cold, heat and gust
+rules check the relevant extreme. The dispatcher persists the notified period or episode before
+posting to Android so that worker retries and process restarts preserve deduplication.
+
 ## Android stack
 - **Kotlin 2.4**, **Jetpack Compose** + Material 3, minSdk 26, compileSdk 37, targetSdk 35; AGP 9 (built-in Kotlin), Gradle 9
 - **MVVM + layers**: `ui` (Compose + ViewModel) → `domain` (models) → `data` (remote / repository); manual DI in `MeteoApp`; navigation through a simple state (`MainActivity`)

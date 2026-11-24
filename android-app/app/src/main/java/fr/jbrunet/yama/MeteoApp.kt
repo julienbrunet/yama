@@ -29,6 +29,12 @@ class MeteoApp : Application() {
         ForecastRepository(openMeteo, ForecastCache(File(filesDir, "forecast.json")), settings, location)
     }
     val placeRepository by lazy { PlaceRepository(GeocodingApi.create()) }
+    val weatherAlerts by lazy {
+        fr.jbrunet.yama.work.WeatherAlertChecker(this, openMeteo, settings) {
+            location.currentPlace(fresh = false) ?: forecastRepository.cached()?.place
+                ?.takeIf { it.detail == LocationProvider.CURRENT_DETAIL }
+        }
+    }
     val aromePi by lazy { AromePiSource() }
     val satellite by lazy { fr.jbrunet.yama.data.satellite.SatelliteSource() }
     val rainMapRepository by lazy {

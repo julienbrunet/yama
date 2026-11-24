@@ -21,6 +21,18 @@ interface OpenMeteoApi {
         @Query("forecast_days") forecastDays: Int = 7,
     ): ForecastDto
 
+    @GET("v1/forecast")
+    suspend fun alertForecast(
+        @Query("latitude") latitude: Double,
+        @Query("longitude") longitude: Double,
+        @Query("forecast_days") days: Int,
+        @Query("forecast_minutely_15") steps: Int?,
+        @Query("minutely_15") minutely: String?,
+        @Query("hourly") hourly: String = ALERT_VARIABLES,
+        @Query("timeformat") timeFormat: String = "unixtime",
+        @Query("timezone") timezone: String = "auto",
+    ): AlertForecastDto
+
     /** Multi-point grid for the forecast map (15 min steps, unix timestamps). */
     @GET("v1/forecast")
     suspend fun grid(
@@ -44,9 +56,26 @@ interface OpenMeteoApi {
     ): List<WindPointDto>
 
     companion object {
+        const val ALERT_VARIABLES = "rain,showers,temperature_2m,wind_gusts_10m"
         fun create(): OpenMeteoApi = Network.create("https://api.open-meteo.com/")
     }
 }
+
+@Serializable
+data class AlertForecastDto(
+    val timezone: String,
+    val hourly: AlertSeriesDto,
+    @SerialName("minutely_15") val minutely: AlertSeriesDto? = null,
+)
+
+@Serializable
+data class AlertSeriesDto(
+    val time: List<Long>,
+    val rain: List<Double?>,
+    val showers: List<Double?>,
+    @SerialName("wind_gusts_10m") val gusts: List<Double?>,
+    @SerialName("temperature_2m") val temperature: List<Double?>,
+)
 
 /** Open-Meteo geocoding API (city search). */
 interface GeocodingApi {

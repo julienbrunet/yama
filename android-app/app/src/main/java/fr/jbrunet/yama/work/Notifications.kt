@@ -13,6 +13,16 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import fr.jbrunet.yama.MainActivity
 import fr.jbrunet.yama.R
+import fr.jbrunet.yama.domain.Place
+import fr.jbrunet.yama.domain.WeatherAlertMatch
+import fr.jbrunet.yama.domain.WeatherAlertRule
+import fr.jbrunet.yama.ui.amountRes
+import fr.jbrunet.yama.ui.labelRes
+import java.text.NumberFormat
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 object Notifications {
     private const val CHANNEL_RAIN = "rain"
@@ -30,12 +40,23 @@ object Notifications {
         )
     }
 
-    fun rain(context: Context, place: String, minutes: Int) =
+    fun canPostWeather(context: Context): Boolean = canPost(context) &&
+        context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL_RAIN)
+            ?.importance != NotificationManager.IMPORTANCE_NONE
+
+    internal fun weather(context: Context, rule: WeatherAlertRule, place: Place, hit: WeatherAlertMatch, zone: ZoneId) {
+        val locale = context.resources.configuration.locales[0]
+        val value = NumberFormat.getNumberInstance(locale).apply { maximumFractionDigits = 2 }.format(hit.value)
+        val amount = context.getString(rule.type.amountRes, value)
+        val time = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale).withZone(zone)
+            .format(Instant.ofEpochSecond(hit.time))
         post(
             context, CHANNEL_RAIN, ID_RAIN,
-            context.getString(R.string.notification_rain_title, minutes),
-            context.getString(R.string.notification_rain_text, place, minutes),
+            context.getString(R.string.alert_notification_title, context.getString(rule.type.labelRes), place.name),
+            context.getString(R.string.alert_notification_text, amount, time),
+            tag = rule.id,
         )
+    }
 
     fun update(context: Context, version: String) =
         post(
@@ -44,13 +65,13 @@ object Notifications {
             context.getString(R.string.notification_update_text, version),
         )
 
-    private fun post(context: Context, channel: String, id: Int, title: String, text: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+    private fun canPost(context: Context): Boolean =
+        (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
+            NotificationManagerCompat.from(context).areNotificationsEnabled()
+
+    private fun post(context: Context, channel: String, id: Int, title: String, text: String, tag: String? = null) {
+        if (!canPost(context)) return
         val open = PendingIntent.getActivity(
             context, 0,
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
@@ -60,9 +81,10 @@ object Notifications {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
-        NotificationManagerCompat.from(context).notify(id, notification)
+        NotificationManagerCompat.from(context).notify(tag, id, notification)
     }
 }
