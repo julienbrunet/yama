@@ -24,12 +24,12 @@
 
 ## Rain forecast map
 No free API provides ready-made rain **forecast tiles**. Implemented approach (`RainMapRepository`):
-1. **Past (≈ −2 h → now)**: RainViewer radar tiles (`/256/{z}/{x}/{y}/2/1_1.png`), **zoom 7 at most** (beyond that RainViewer answers “zoom not supported”): `RadarOverlay` downloads them at zoom ≤ 7 and stretches them to the map zoom. Observed Meteosat clouds are drawn underneath.
+1. **Past (≈ −2 h → now)**: RainViewer radar tiles (`/256/{z}/{x}/{y}/2/1_0.png`), **zoom 7 at most**. Reflectivity is converted to estimated intensity and smoothed before the tiles are drawn over the Meteosat clouds.
 2. **Future (now → +24 h, 15 min steps — the finest available for free)**: a 12 × 16 point grid covering **the visible area** of the map (+10 %);
    reloaded (after 400 ms of inactivity) only when the view leaves the grid or the spacing becomes 2× too coarse / fine (`RainMapRepository.needsNewGrid`). Each point counts as one call in the Open-Meteo quota (~190 per reload); the last 10 areas are kept 15 min in memory (`cachedFor`),
    **a single** multi-coordinate Open-Meteo call with `minutely_15=precipitation` and hourly `cloud_cover`,
-   interpolated with a gaussian kernel then coloured by intensity level (sharp, round edges) by `ForecastGridOverlay`; the area boundary is dotted.
-3. Time slider + animated playback: 6 frames per 15 min step (`MapViewModel.FRAME_MS` / `STEPS`, `Blend`); forecast → intermediate frames with an estimated overall motion (`FrameInterpolation`), computed off the main thread; radar → cross-fade (`RadarOverlay.next` / `mix`). Colour scale shared by radar and forecast (RainViewer “Universal Blue” palette, `RainLevel`) with a legend.
+   interpolated with a Gaussian kernel and drawn using the same translucent intensity gradient as the radar. A filtered pass over the OpenStreetMap tiles draws city names and other dark cartographic details above the weather layers.
+3. The time slider includes radar history. The forecast buttons play 1 h, 12 h, or all received forecast frames, with the final button labelled with the received duration. Each loop takes 8 seconds. Forecast frames on the same grid use motion interpolation (`FrameInterpolation`) off the main thread. Radar frames cross-fade.
 4. Wind layer (button at the top right, hidden by default): loaded on demand on a coarse grid (`windGrid`, `minutely_15`), arrows coloured by `WindLevel`; rain and clouds are hidden while it is shown.
 5. Refresh: automatic when the data is > 10 min old (checked every minute while the screen is visible) + a tappable “Updated at HH:mm” pill. Home screen: pull down to refresh.
 6. Possible evolution: convert AROME GRIB2 files from [meteo.data.gouv.fr](https://meteo.data.gouv.fr) into tiles for a nationwide map.
@@ -43,7 +43,7 @@ No free API provides ready-made rain **forecast tiles**. Implemented approach (`
 - `AromePiSource`: GetCapabilities (remembered 5 min) → automatic choice of the precipitation layer (rate > 15 min accumulation > accumulation since the run) and of the latest run;
   then one GeoTIFF GetCoverage per 15 min step (8 in parallel) over the grid extent, downscaled to ≤ 160 px.
 - Used only in France and when the view is ≤ 4° tall; beyond +6 h, or on failure, the Open-Meteo forecast takes over.
-- Shared rendering (`renderForecast`): gaussian-kernel interpolation → round blobs, sharp edges.
+- Shared forecast rendering (`renderForecast`) uses Gaussian-kernel interpolation and a continuous rain gradient.
 
 ## Android stack
 - **Kotlin 2.4**, **Jetpack Compose** + Material 3, minSdk 26, compileSdk 37, targetSdk 35; AGP 9 (built-in Kotlin), Gradle 9

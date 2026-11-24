@@ -128,8 +128,11 @@
     <string name="map_no_data">Aucune donnée</string>
     <string name="source_open_meteo">Prévision Open-Meteo (AROME / ICON)</string>
     <string name="source_arome_pi">Prévision Météo-France AROME-PI</string>
-    <string name="timeline_radar">radar −2 h</string>
-    <string name="timeline_forecast">prévision +24 h</string>
+    <string name="timeline_radar">radar</string>
+    <string name="timeline_forecast">prévision</string>
+    <string name="timeline_hours">%1$d h</string>
+    <string name="timeline_minutes">%1$d min</string>
+    <string name="timeline_hours_minutes">%1$d h %2$d min</string>
     <string name="rain_level_light">faible</string>
     <string name="rain_level_moderate">modérée</string>
     <string name="rain_level_heavy">forte</string>

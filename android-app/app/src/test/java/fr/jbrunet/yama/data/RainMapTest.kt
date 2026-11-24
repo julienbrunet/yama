@@ -74,7 +74,7 @@ class RainMapTest {
             .toFrames()
 
         assertEquals(
-            "https://tilecache.rainviewer.com/v2/radar/abc/256/{z}/{x}/{y}/2/1_1.png",
+            "https://tilecache.rainviewer.com/v2/radar/abc/256/{z}/{x}/{y}/2/1_0.png",
             (frames.single() as MapFrame.Radar).tileUrlTemplate,
         )
     }
